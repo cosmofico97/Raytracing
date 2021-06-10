@@ -54,8 +54,10 @@ end
 
 function torus_point_to_uv(point::Point)
     len_point = norm(point)
-    u = asin(point.y/len_point) / π
-    v = atan(point.z, point.x) / (2.0 * π)
+    # u = atan(point.y/(point.x^2 + point.z^2)^0.5) / (2. * pi)    # asin(point.y/len_point) / (2.0 * π)
+    # v = atan(point.z/point.x) / (2. * pi)   # atan(point.z, point.x) / (2.0 * π)
+    u = atan(point.y/point.x) / (2. * pi)
+    v = atan(point.z/(point.x^2 + point.z^2)^0.5) / (2. * pi)
     v>=0 ? nothing : v+= 1.0
     u>=0 ? nothing : u+= 1.0
     return Vec2d(u,v)
@@ -99,19 +101,30 @@ function plane_normal(point::Point, ray_dir::Vec)
 end
 
 """
-    torus_normal(p::Point, ray_dir::Vec, R::Float64) -> Normal
+    torus_normal(p::Point, ray_dir::Vec, r::Float64, O::Point) -> Normal
 
-Compite the [`Normal`](@ref) of a torus
+Compite the normal of a torus
 
-The normal is computed for [`Point`](@ref) (a point on the surface of the
+The normal is computed for `p` (a point on the surface of the
 torus), and it is chosen so that it is always in the opposite
-direction with respect to `ray_dir` ([`Vec`](@ref)).
+direction with respect to `ray_dir`.
+
+See also: [`Normal`](@ref), [`Point`](@ref), ([`Vec`](@ref))
 """
-function torus_normal(p::Point, ray_dir::Vec, R::Float64)
+function torus_normal(p::Point, ray_dir::Vec, r::Float64, O::Point)
+#=
     R_z = copysign(R / √(1+(p.x/p.z)^2), p.z)
-    R_x = copysign(p.x / p.z * R_z, p.x)
+    R_x = copysign(R_z * p.x / p.z, p.x)
     R_p = Vec(R_x, 0, R_z)
     result = Normal(Vec(p - R_p))
+    result ⋅ ray_dir < 0.0 ? nothing : result = -result
+=#
+#    q = Point(O.x - p.x, O.y - p.y, O.z - p.z)
+#    println("\npoint for normal: ", p, "\tq = ", q, "\tO = ", O)
+    (abs(p.x) < 1e-6) ? (N_x = 0.) : (N_x = copysign(((1 - (p.z/r)^2) / (1 + (p.y/p.x)^2))^0.5), p.x)
+    (abs(p.y) < 1e-6) ? (N_y = 0.) : (N_y = copysign(((1 - (p.z/r)^2) / (1 + (p.x/p.y)^2))^0.5), p.y)
+    N_z = p.z/r
+    result = Normal(N_x, N_y, N_z)
     result ⋅ ray_dir < 0.0 ? nothing : result = -result
     return result
 end
@@ -205,42 +218,85 @@ function ray_intersection(plane::Plane, ray::Ray)
     )
 end
 
+"""
+    ray_intersection(torus::Torus, ray::Ray) :: Union{HitRecord, Nothing}
+
+Check if the `ray` intersects the `torus`.
+Return a `HitRecord`, or `nothing` if no intersection is found.
+
+See also: [`Ray`](@ref), [`Torus`](@ref), [`HitRecord`](@ref)
+"""
 function ray_intersection(torus::Torus, ray::Ray)
     inv_ray = inverse(torus.T) * ray
-
-    d = normalize(inv_ray.dir)
-    o = inv_ray.origin
-    norm²_d = squared_norm(d)
-    norm²_o = squared_norm(Vec(o))
+    o = Vec(inv_ray.origin)
+#    d = normalize(inv_ray.dir)
+    d = inv_ray.dir
+    norm2_d = squared_norm(d)
+    norm2_o = squared_norm(o)
+    scalar_od = o ⋅ d
     r = torus.r
     R = torus.R
+
+    c4 = norm2_d^2
+    c3 = 4 * norm2_d * scalar_od
+    c2 = 4 * scalar_od^2 + 2 * norm2_d * norm2_o - 4 * R^2 * (norm2_d - d.z^2) + 2 * norm2_d * (R^2 - r^2)
+    c1 = 4 * norm2_o * scalar_od + 4 * scalar_od * (R^2 - r^2) - 8 * (scalar_od - o.z * d.z)
+    c0 = norm2_o^2 + (R^2 - r^2)^2 + 2 * norm2_o * (R^2 - r^2) - 4 * R^2 * (norm2_o - o.z^2)
+
+#=
+    # form http://blog.marcinchwedczuk.pl/ray-tracing-torus
     c4 = norm²_d^2
-    c3 = 4 * norm²_d * (Vec(o) ⋅ d)
-    c2 = 2 * norm²_d * (norm²_o - r^2 - R^2) + 4 * (Vec(o) ⋅ d)^2 + 4 * R^2 * (d.y)^2
-    c1 = 4 * (norm²_o - r^2 - R^2) *  (Vec(o) ⋅ d) + 8 * R^2 * o.y * d.y
+    c3 = 4 * norm²_d * (o ⋅ d)
+    c2 = 2 * norm²_d * (norm²_o - r^2 - R^2) + 4 * (o ⋅ d)^2 + 4 * R^2 * (d.y)^2
+    c1 = 4 * (norm²_o - r^2 - R^2) * (o ⋅ d) + 8 * R^2 * o.y * d.y
     c0 = (norm²_o - r^2 - R^2)^2 - 4 * R^2 * (r^2 - (o.y)^2)
+=#
+#=
+    # mine
+    c4 = norm²_d^2 - 4 * R^2 * (norm²_d - d.z^2)
+    c3 = 4 * norm²_d * (o ⋅ d) - 16 * R^2 * (norm²_d - d.z^2) * (o ⋅ d - o.z * d.z)
+    c2 = 4 * (o ⋅ d)^2 + 2 * norm²_d * norm²_o + 2 * norm²_d * (R^2 - r^2) + 8 * (2 * R^2 * (o ⋅ d - o.z * d.z)^2 - (norm²_o - o.z^2) * (norm²_d * d.z^2))
+    c1 = 4 * norm²_o * (o ⋅ d) + 4 * (R^2 - r^2) * (o ⋅ d) - 16 * R^2 * (norm²_o - o.z^2) * (o ⋅ d - o.z * d.z)
+    c0 = norm²_o^2 + (R^2 - r^2)^2 + 2 * norm²_o * (R^2 - r^2) - 4 * R^2 * (norm²_o - o.z^2)
+=#
+#=
+    #from site, but adjusted for z-axis symmetry (y -> z)
+    c4 = norm²_d^2
+    c3 = 4 * norm²_d * (o ⋅ d)
+    c2 = 2 * norm²_d * (norm²_o - r^2 - R^2) + 4 * (o ⋅ d)^2 + 4 * R^2 * (d.z)^2
+    c1 = 4 * (norm²_o - r^2 - R^2) * (o ⋅ d) + 8 * R^2 * o.z * d.z
+    c0 = (norm²_o - r^2 - R^2)^2 - 4 * R^2 * (r^2 - (o.z)^2)
+=#
 
     t_ints = roots(Polynomial([c0, c1, c2, c3, c4]))
+    (t_ints == nothing) && (return nothing)
 
-    hit_t = Union{Float64, Nothing}
-    hit_t = nothing
+    hit_ts = Vector{Float64}()
+#    println("\nt_ints: ", hit_ts)
+#    println("len of t_ints: ", length(hit_ts))
+#    println(t_ints)
     for i in t_ints
-        if typeof(i) == Float64
-            if (i > inv_ray.tmin) && (i < inv_ray.tmax)
-                hit_t = i
-            end
+        if (typeof(i) == ComplexF64)
+            continue
+        elseif (inv_ray.tmin < i < inv_ray.tmax)
+            push!(hit_ts, i)
+        else
+            nothing
         end
+#        (typeof(i) == ComplexF64) && continue
+#        (inv_ray.tmin < i < inv_ray.tmax) ? push!(hit_ts, i) : nothing
     end
-
-    if hit_t == nothing
-        return nothing
-    end
-    
+    (length(hit_ts) == 0) && return nothing
+#    println("t_min = ", inv_ray.tmin, "\tt_max = ", inv_ray.tmax)
+#    println("t_ints: ", hit_ts)
+#    println("len of t_ints: ", length(hit_ts), "\ttype: ", typeof(hit_ts))
+    hit_t = min(hit_ts...)
+#    println("t_hit: ", hit_t, "\n")
     hit_point = at(inv_ray, hit_t)
 
     return HitRecord(
         torus.T * hit_point,
-        torus.T * torus_normal(hit_point, inv_ray.dir, torus.R),
+        torus.T * torus_normal(hit_point, inv_ray.dir, torus.r, torus.O),
         torus_point_to_uv(hit_point), # manca la funzione
         hit_t,
         ray, 

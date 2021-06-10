@@ -109,6 +109,14 @@ function second_world()
 	mirror_material_2 = 
 		Material(SpecularBRDF(UniformPigment(to_RGB(178, 255, 102))))
 	
+	add_shape!(
+		world,
+		Torus(translation(Vec(0.4, 1.5, 2.)),
+		Material(DiffuseBRDF(CheckeredPigment(RGB(0.2, 0.3, 0.4), RGB(0.8, 0.7, 0.6), 8))),
+		0.7,
+		1.1
+		)
+	)
 	
 	add_shape!(
 		world,
@@ -327,9 +335,10 @@ function demo(
 	end
 
 	function print_progress(row::Int64, col::Int64)
-     	print("Rendered row $(image.height - row)/$(image.height) \t= ")
+     	printstyled("Rendered ", color=:light_cyan)
+		print("row\t $(image.height - row)/$(image.height) = ")
 		@printf "%.2f" 100*((image.height - row)/image.height)
-		print("%\n")
+		print("%\r")
 	end
 
 	fire_all_rays!(tracer, renderer, print_progress)

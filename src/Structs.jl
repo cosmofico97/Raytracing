@@ -614,7 +614,7 @@ end
     )
 
 A 3D unit torus, a ring with circular section; has origin 
-in `(0, 0, 0)` and axis parallel to the y-axis.
+in `(0, 0, 0)` and axis parallel to the z-axis.
 
 ## Arguments
 
@@ -626,8 +626,10 @@ in `(0, 0, 0)` and axis parallel to the y-axis.
 
 - `R::Float64` : distance between the torus center and the section center.
 
+- `O::Point` : cener of the torus.
+
 ```ditaa
-^ ̂y                __-__
+^ ̂z                __-__
 |                 /     \\ 
 |---O------------(---o---)
 |                 \\__ __/
@@ -642,7 +644,12 @@ struct Torus <: Shape
     Material::Material
     r::Float64
     R::Float64
-    Torus(T=Transformation(), M=Material(), r=0.5, R=1.0) = new(T, M, r, R)
+    O::Point
+    Torus(T=Transformation(),
+          M = Material(),
+          r = 0.5, 
+          R = 1.0
+        ) = new(T, M, r, R, T*Point(0., 0., 0.))
 end
 
 
